@@ -1,3 +1,10 @@
+#This script
+# a) creates VACATION mailbox event with Out-of-Office time mark
+# b) turn OOF on if necessary.
+#
+# Verison 3.0
+# (c) Aleksandr Ilyushenko, 2022
+#
 [Reflection.Assembly]::LoadFile("C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll") | Out-Null
 Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
 #Init data. Gets from init parameters' file
