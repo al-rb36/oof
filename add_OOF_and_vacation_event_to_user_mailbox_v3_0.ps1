@@ -1,4 +1,4 @@
-﻿[Reflection.Assembly]::LoadFile("C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll") | Out-Null
+[Reflection.Assembly]::LoadFile("C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll") | Out-Null
 Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
 #Init data. Gets from init parameters' file
     $PS_Script_Tilte = ""
@@ -146,8 +146,10 @@ try {
     #Write-alError -EntryType Information -Message ($file)
 
     $tmp2 = ""
+    $param = @()
     if (Test-Path -Path $file -PathType Leaf) {
         $tmp2 = Import-Csv -Path $file -Delimiter ";" -Encoding UTF8 #|select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, @{n='StartShift'; e={0}}, @{n='EndShift'; e={0}}, @{n='IsEventExist'; e={$false}}, @{n='IsOOFOn'; e={$false}}, @{n='FullString'; e={$_.SAMAccountNameAD + $_.PregLeaveName + $_.PregLeaveFrom + $_.PregLeaveTo}}
+        $param = $tmp2[0].psobject.Properties.Name
         }
 
     
@@ -238,7 +240,8 @@ try {
     #$mailBoxes_temp = $mailBoxes |select -First 1
     
     $i = ""
-    $logFile = "Log_flags;SAMAccountNameAD;PregLeaveName;PregLeaveFrom;PregLeaveTo;StartShift;EndShift;IsEventExist;IsOOFOn;FullString;mail;isMailBox`r`n"
+    #$logFile = "Log_flags;SAMAccountNameAD;PregLeaveName;PregLeaveFrom;PregLeaveTo;StartShift;EndShift;IsEventExist;IsOOFOn;FullString;mail;isMailBox`r`n"
+    $logFile = "Log_flags;" + ($param -join ";") + ";mail;isMailBox`r`n"
 
     $MustEventCount = 0 #Count of events to be exist
     $CreatedEventCount = 0 #Count of events to be created
@@ -250,13 +253,21 @@ try {
          #Write-alError -EntryType Information -Message ($mailBox)
         #$body1 +='<br>' +$mailBoxes[$i].mail
         $d_start = Get-Date($mailBoxes[$i].PregLeaveFrom) # -Format 'dd.MM.yyyy'
-
-        if (($d_start.AddDays(5) -ge $now_date) -and ($mailBoxes[$i].IsEventExist -ne $true)) {
-
-        $logFile += "5,EventNotCreated"
-        $MustEventCount += 1
-
         $d_end = Get-Date($mailBoxes[$i].PregLeaveTo) # -Format 'dd.MM.yyyy'
+        
+        #$MustEventCount += 1
+        #Exception calling "FindAppointments" with "1" argument(s): "The specified view range exceeds the maximum range of two years."
+        if (($d_end - $d_start).Days -gt 600) { $mailBoxes[$i].IsEventExist = $true } # elimination of  '2 years over' error 
+
+        $nowTimeDelta = ($d_start.AddDays(-5) - $now_date).Days
+        if ($nowTimeDelta -le 0) { $MustEventCount += 1; $logFile += "EventMustExist" }
+
+        if (($nowTimeDelta -le 0) -and ($mailBoxes[$i].IsEventExist -ne $true)) {
+
+        $logFile += ",5,EventNotCreated"
+        
+
+        #$d_end = Get-Date($mailBoxes[$i].PregLeaveTo) # -Format 'dd.MM.yyyy'
         $appStart = $d_start.ToString('dd.MM')
         $appEnd = $d_end.ToString('dd.MM')
         $oof_def_text = "Уважаемые коллеги, добрый день. С "  + $appStart + " по " + $appEnd + "  нахожусь в отпуске."
@@ -264,8 +275,7 @@ try {
     #check vacation event existance
         
         $appointments = $null
-        #$EmailAddress = "aleksandr.ilyushenko@rosbank.ru"
-        ##EmailAddress = "Aleksey.A.Semenov@rosbank.ru"
+
         $EmailAddress = $mailBoxes[$i].mail
         #$EWSURL = '' #gets from init parameters' file
         $ExchangeVersion = [Microsoft.Exchange.WebServices.Data.ExchangeVersion]::Exchange2016
@@ -323,11 +333,11 @@ try {
             $body += "Оно поможет организаторам собраний учитывать Ваше отсутствие на рабочем месте."
             $body += '<br><br>Накануне начала отпуска рекомендуется включить в Outlook "Автоответ (Нет на работе)" и заполнить текст автоответа. '
             $body += 'Если Автоответ будет выключен, произойдёт его автоматическое включение для внутренних отправителей со стандартным текстом: "'
-            $body += $oof_def_text + '".<br><br>Приятного отдыха.'
+            $body += $oof_def_text + '".<br><br>Приятного отдыха.<br><br>Управление процессов и культуры изменений'
             $body += '<br><br> Для информации. Текущий текст внутреннего автоответа:<br>======<br>' + $curr_ar_status.InternalMessage + '<br>======'
             #$myTo = $EmailAddress
       #      Send-alMessage -body $body -to $EmailAddress -Subj $mySubject
-            $body1 += '<br>' + $Subject
+            $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $Subject
 
         }
         }
@@ -347,9 +357,12 @@ try {
             $OOF_OffCount += 1
             #Write-alError -EntryType Information -Message ("first if")
             $curr_ar_status = $mailboxes[$i].mail | Get-MailboxAutoReplyConfiguration |select AutoReplyState, StartTime, EndTime, OOFEventSubject, Identity,IsValid, InternalMessage
-            $StartTimeDelta = [Math]::Abs(((Get-Date($mailBoxes[$i].PregLeaveFrom)).Date - (Get-Date($curr_ar_status.StartTime)).Date).Days)
-            $EndTimeDelta = [Math]::Abs(((Get-Date($mailBoxes[$i].PregLeaveTo)).Date - (Get-Date($curr_ar_status.EndTime)).Date).Days)
-            if (-not((($StartTimeDelta -le 2 -and $EndTimeDelta -le 2 -and $curr_ar_status.AutoReplyState -eq "Scheduled"))`
+            #$StartTimeDelta = [Math]::Abs(((Get-Date($mailBoxes[$i].PregLeaveFrom)).Date - (Get-Date($curr_ar_status.StartTime)).Date).Days)
+            #$EndTimeDelta = [Math]::Abs(((Get-Date($mailBoxes[$i].PregLeaveTo)).Date - (Get-Date($curr_ar_status.EndTime)).Date).Days)
+            $StartTimeDelta = ((Get-Date($mailBoxes[$i].PregLeaveFrom)).Date - (Get-Date($curr_ar_status.StartTime)).Date).Days
+            $EndTimeDelta = ((Get-Date($mailBoxes[$i].PregLeaveTo)).Date - (Get-Date($curr_ar_status.EndTime)).Date).Days
+
+            if (-not((($StartTimeDelta -ge -2 -and $EndTimeDelta -le 2 -and $curr_ar_status.AutoReplyState -eq "Scheduled"))`
              -or $curr_ar_status.AutoReplyState -eq "Enabled")) {
                 #Write-alError -EntryType Information -Message ("2nd if")
                 $body1 += "<br>" + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].mail + "; " + $mailBoxes[$i].PregLeaveFrom  + "; " + $mailBoxes[$i].PregLeaveTo + "; " + $mailBoxes[$i].PregLeaveName
@@ -383,19 +396,21 @@ try {
      #Write-alError -EntryType Information -Message ("Before Stop")
     
     $body1 += '<br>' + $MustEventCount + " : Count of events to be exist"
-    $body1 += '<br>' + $CreatedEventCount + " : Count of events to be created"
     $body1 += '<br>' + $NoEventCount + " : Count of events that are not exist"
-    $body1 += '<br>' + $OOF_OffCount + " : Count of OOF-Off records to be proceeded"
+    $body1 += '<br>' + $CreatedEventCount + " : Count of created events"
+    $body1 += '<br>' + $OOF_OffCount + " : Count of OOF-Off records to be checked"
     $body1 += '<br>' + $OOF_OnCount + " : Count of OOF turned On"
 
 
     Send-alMessage -body $body1 -to $myTo -Subj $mySubj
     #Write-alError -EntryType Information -Message ($body1 + "`r`n" + $myTo + "`r`n" + $mySubj)
     #Write-alError -EntryType Information -Message ("Stop")
-    $mailBoxes + $mailBoxes_not | select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, StartShift, EndShift, IsEventExist, IsOOFOn, FullString | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+    #$mailBoxes + $mailBoxes_not | select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, StartShift, EndShift, IsEventExist, IsOOFOn, FullString | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+    $mailBoxes + $mailBoxes_not | select $param | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
 
 } catch {
-      $mailBoxes + $mailBoxes_not | select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, StartShift, EndShift, IsEventExist, IsOOFOn, FullString | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+      #$mailBoxes + $mailBoxes_not | select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, StartShift, EndShift, IsEventExist, IsOOFOn, FullString | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+      $mailBoxes + $mailBoxes_not | select $param | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
       Out-File -InputObject $logFile -Encoding utf8 -FilePath $file_log
       Write-Host $Error[0].Exception.Message
       $body =  "Error : " + $Error[0].Exception.Message
