@@ -1,4 +1,4 @@
-﻿#This script
+#This script
 # a) creates VACATION mailbox event with Out-of-Office time mark
 # b) turn OOF on if necessary.
 #
@@ -174,6 +174,7 @@ try {
     #$mailBoxes_temp = $mailBoxes |select -First 1
     
     $logFile = "Log_flags;" + ($param -join ";") + ";mail;isMailBox`r`n"
+    $logFileErrors = $false
 
     $MustEventCount = 0 #Count of events should be exist
     $CreatedEventCount = 0 #Count of events to be created
@@ -205,8 +206,7 @@ try {
         $nowTimeDelta = ($d_start.AddDays(-5) - $now_date).Days
         if ($nowTimeDelta -le 0) { $MustEventCount += 1; $logFile += "EventMustExist" }
         
-        
-        
+        #vacation event existance control
         if (($nowTimeDelta -le 0) -and ($mailBoxes[$i].IsEventExist -ne $true)) {
 
         $logFile += ",5,EventNotCreated"
@@ -215,7 +215,7 @@ try {
         $appEnd = $d_end.ToString('dd.MM')
         $oof_def_text = "Уважаемые коллеги, добрый день. С "  + $appStart + " по " + $appEnd + "  нахожусь в отпуске."
 
-    #check vacation event existance
+        #check vacation event existance
         
         $appointments = $null
         
@@ -256,6 +256,7 @@ try {
             catch {
                 #$mailBoxes[$i].mail
                 $recErrors += $mailBoxes[$i]
+                $logFile += ",FindAppointmentsError," + $Error[0]
                 }
             } 
         }
@@ -270,13 +271,20 @@ try {
                 $lastEventEndDelta = ($d_end - $lastEvent.end).TotalHours
             
            #Appropriate user vacation events exist
-                if(($firstEventStartDelta -ge -48 -and $lastEventEndDelta -lt 48)) {$NewEventFlag = $false; $NoNeedEventCount += 1; $logFile += ",UserEventExists"}
+                if(($firstEventStartDelta -ge -48 -and $lastEventEndDelta -lt 48)) {$NewEventFlag = $false; $NoNeedEventCount += 1; $logFile += ",UserEventExists"
+                    $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].FullString
+                    $body1 += '<br>&emsp;&ensp;' + 'UserEventCount: ' + $appointments.count + '<br>&emsp;&ensp; FirstEvent: ' + ($firstEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent)
+                    $body1 += '<br>&emsp;&ensp;' + 'LastEvent: ' + ($lastEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent) 
+                }
             } catch {
-                $logFile += ",UserEventError"
+                $logFile += ",UserEventError," + $Error[0]
+                $logFileErrors = $true
             }
         }
+        
     
     #add vacation event existance
+        try {
         if ($NewEventFlag -eq $true) {
             #Write-alError -EntryType Information -Message ("Appoi")
             $logFile += ",EventNotExist"
@@ -308,7 +316,13 @@ try {
       #      $Appointment.Save($CalendarFolder.DisplayName, 0)
             $logFile += ",EventCreated"
             $CreatedEventCount += 1
+        }
+        } catch {
+            $logFile += ",EventCreationError," + $Error[0]
+            $logFileErrors = $true
+        }
 
+        try {
             $mailBoxes[$i].IsEventExist = $true
             $mySubject = "В почтовый календарь добавлено событие ОТПУСК"
             $body = 'Добрый день.<br><br>В Ваш почтовый календарь добавлено событие с именем "' + $Subject + '". '
@@ -321,9 +335,12 @@ try {
       #      Send-alMessage -body $body -to $EmailAddress -Subj $mySubject
             $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $Subject
 
+        } catch {
+            $logFile += ",EventCreationMessageSendingError," + $Error[0]
+            $logFileErrors = $true
         }
-        }
-        
+
+        } # end if
 
     #check autoreply status
          #Write-alError -EntryType Information -Message ("before Set")
@@ -332,6 +349,7 @@ try {
             $logFile += ",OOF_check"
             $OOF_OffCount += 1
             #Write-alError -EntryType Information -Message ("first if")
+            try {
             $curr_ar_status = $mailboxes[$i].mail | Get-MailboxAutoReplyConfiguration |select AutoReplyState, StartTime, EndTime, OOFEventSubject, Identity,IsValid, InternalMessage
             
             $StartTimeDelta = ((Get-Date($mailBoxes[$i].PregLeaveFrom)).Date - (Get-Date($curr_ar_status.StartTime)).Date).Days
@@ -340,6 +358,7 @@ try {
             if (-not((($StartTimeDelta -ge -2 -and $EndTimeDelta -le 2 -and $curr_ar_status.AutoReplyState -eq "Scheduled"))`
              -or $curr_ar_status.AutoReplyState -eq "Enabled")) {
                 #Write-alError -EntryType Information -Message ("2nd if")
+                try {
                 $body1 += "<br>" + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].mail + "; " + $mailBoxes[$i].PregLeaveFrom  + "; " + $mailBoxes[$i].PregLeaveTo + "; " + $mailBoxes[$i].PregLeaveName
                 $body1 += "<br>&emsp;&ensp;" + $curr_ar_status.AutoReplyState + "; " + $curr_ar_status.StartTime + "; " + $curr_ar_status.EndTime 
                 #Write-alError -EntryType Information -Message ("Set")
@@ -347,9 +366,14 @@ try {
                 $mailBoxes[$i].IsOOFOn = $true
                 $logFile += ",OOF_On"
                 $OOF_OnCount += 1
-                
+                } catch {
+                     $logFile += ",SetAutoReplyConfigurationError," + $Error[0]
+                     $logFileErrors = $true
+                }
+
                 #send message to user if auto event has not been created
                 if (-not($mailBoxes[$i].IsEventExist -eq $true)) {
+                    try {
                     $mySubject = 'Автоответ "Нет на работе" включен (событие ОТПУСК)'
                     $body = 'Добрый день.<br><br>В Вашем почтовом ящике на период отпуска включен автоответ "Нет на работе" для внутренних отправителей со стандартным текстом: "'
                     $body += $oof_def_text + '".<br><br>Приятного отдыха.<br><br>Управление процессов и культуры изменений'
@@ -359,10 +383,16 @@ try {
                     $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $Subject
                     $logFile += ",OOF_OnMessageSent"
                     $OOF_OnMessageSentCount += 1
-
+                    } catch {
+                        $logFile += ",OOFTurnOnMessageSendingError," + $Error[0]
+                        $logFileErrors = $true
+                    }
                 }
             }
-            
+         } catch {
+                 $logFile += ",GetAutoReplyConfigurationError," + $Error[0]
+                 $logFileErrors = $true
+            }   
         }
         $logFile += ";" + ($mailBoxes[$i].psobject.Properties.value -join ";") + "`r`n"
         #$mailBoxes[$i].psobject.Properties.value -join ";"
@@ -376,10 +406,14 @@ try {
     $body1 += '<br>' + $MustEventCount + " : Count of events should be exist"
     $body1 += '<br>' + $NoEventCount + " : Count of events that are not exist"
     $body1 += '<br>' + $CreatedEventCount + " : Count of created events"
-    $body1 += '<br>' + $NoNeedEventCount + " : Count of events that are not to be necessary created"
+    $body1 += '<br>' + $NoNeedEventCount + " : Count of events that are not to be necessary created (appropriate user-created events have been found)"
     $body1 += '<br>' + $OOF_OffCount + " : Count of OOF-Off records should be checked"
     $body1 += '<br>' + $OOF_OnCount + " : Count of OOF turned On"
     $body1 += '<br>' + $OOF_OnMessageSentCount + " : Count of 'OOF turned On' messages have been sent to user"
+    
+    if($logFileErrors) {
+        $body1 += '<br><br> There were some errors. Addition info logfile ' + $file_log
+    } 
 
 
     Send-alMessage -body $body1 -to $myTo -Subj $mySubj
@@ -396,7 +430,7 @@ try {
       $body =  "Error : " + $Error[0].Exception.Message
       $body += "<br>" + ($Error[0].CategoryInfo -join '`r`n')
       $body += "<br>" + $Error[0].ScriptStackTrace
-      $body += "<br><br> Script execution fails. Addition info in logfile " + $file_log
+      $body += "<br><br> Script execution fails. Addition info logfile " + $file_log
       Write-alError -EntryType Error -Message $body
       #Write-alError -EntryType Error -Message "Zabbix test5"
       Send-alMessage -body $body -To $myTo -Subj $mySubj
