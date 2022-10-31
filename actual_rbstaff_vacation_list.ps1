@@ -1,4 +1,4 @@
-﻿[Reflection.Assembly]::LoadFile("C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll") | Out-Null
+[Reflection.Assembly]::LoadFile("C:\Program Files\Microsoft\Exchange\Web Services\2.2\Microsoft.Exchange.WebServices.dll") | Out-Null
 Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
 #Init data
     $PS_Script_Tilte = ""
@@ -8,6 +8,8 @@ Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
     $domain_gts = ""
     $domain_gts_SearchBase = ""
     $connectionString = ""
+
+    [int]$waitTimer = 5 #will try to execute the script Value-number times with 10 minute interval 
 
     #Send-myMessage constants
     $myFrom = ""
@@ -98,10 +100,12 @@ Function Get-alStringHash {
     Get-FileHash -InputStream $mystream -Algorithm $Algorithm
 }
 
+for ( $k = 0; $k -lt $waitTimer; $k++) {
+
 try {
 
 #get current vacation data
-    
+    $body = ""
     $c_date = (Get-Date -Format 'yyyy-MM-dd')
     $query = "SELECT [SAMAccountNameAD]
                  ,[PregLeaveName]
@@ -118,32 +122,16 @@ try {
     $adapter.Fill($dataset)
     $memb_new_SamAccountName_list = $dataset.Tables[0]
     $memb_new_SamAccountName_list1 = $memb_new_SamAccountName_list |select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, @{n='StartShift'; e={0}}, @{n='EndShift'; e={0}}, @{n='IsEventExist'; e={$false}}, @{n='IsOOFOn'; e={$false}}, @{n='FullString'; e={$_.SAMAccountNameAD + $_.PregLeaveName + $_.PregLeaveFrom + $_.PregLeaveTo}} #, @{n='mail'; e={""}}, @{n='isMailBox'; e={""}}
-    #$memb_new_SamAccountName_list1 |select -First 5
-    #$file1 = $env:USERPROFILE +"\Documents\add_OOF_psscript\20220908-190034.csv"
+    
     $file = $env:USERPROFILE +"\Documents\add_OOF_psscript\vacation_list.csv"
     
     $tmp2 = ""
     if (Test-Path -Path $file -PathType Leaf) {
         $tmp2 = Import-Csv -Path $file -Delimiter ";" -Encoding UTF8 #|select *,  @{n='mail'; e={""}}, @{n='isMailBox'; e={""}}
         }
-    #$tmp2 | select -First 3
-    #$tmp2 |Get-Member
-    #$tmp2.Count
-    #$diff_email_list = Compare-Object -ReferenceObject $tmp2 -DifferenceObject $memb_new_SamAccountName_list1 -IncludeEqual # -Property SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo
+   
     $diff_email_list = $memb_new_SamAccountName_list1 | %{if(-not($tmp2.FullString -match $_.FullString)){$_}}
     $vacRecAdd = $diff_email_list
-    #$diff_email_list |Get-Member
-    #$diff_email_list |select -First 3 SideIndicator
-    #$vacRecAdd = $diff_email_list | ?{$_.SideIndicator -eq "<=" }
-    #$vacRecAdd = $diff_email_list
-
-    #$vacRecAdd = $memb_new_SamAccountName_list1 | %{if(-not($tmp2.SAMAccountNameAD -match $_.SAMAccountNameAD)){$_}}
-    #$vacRecHold = $memb_new_SamAccountName_list1 | %{if($tmp2.FullString -match $_.FullString){$_}}
-    #$vacRecUpdate = $tmp2 | %{if(($memb_new_SamAccountName_list1.SAMAccountNameAD -match $_.SAMAccountNameAD)`
-    #     -and ($memb_new_SamAccountName_list1.PregLeaveFrom -lt $_.PregLeaveFrom) ) {$_}}
-    #$vacRecOld = $diff_email_list | ?{$_.SideIndicator -ne "<=" }
-    #$vacRecAdd.Count | Select -First 3
-    #$vacRecOld.Count
     
     $body = [string]$vacRecAdd.Count + " : Count of new vacation records to add<br>------<br>Added vacation records<br>------<br>"
     #$body += ($vacRecAdd |Out-String).Split('`r`n')  -join '<br>'
@@ -157,32 +145,26 @@ try {
     $vacRecDel = $tmp2 | ?{((Get-Date($_.PregLeaveTo) -ErrorAction SilentlyContinue).Date) -lt $now_date.AddDays(0)}
     $body += "<br>" + $vacRecDel.Count + " : Count of vacation records to delete<br>------<br>Deleted vacation records<br>------<br>"
     #$body += ($vacRecDel |Out-String).Split('`r`n') -join '<br>'
-    $body += $vacRecDel.FullString -join '<br>'
-    $vacRecActual | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
-    #$tmp2 |select SAMAccountNameAD,PregLeaveName,PregLeaveFrom,PregLeaveTo, @{n='StartShift'; e={0}}, @{n='EndShift'; e={0}}, @{n='IsEventExist'; e={$false}}, @{n='IsOOFOn'; e={$false}}, FullString | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
-    #$tmp2 | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
-    #$diff = $rb_raw_list20 | %{if(-not($rb_raw_list10.FullString -match $_.FullString)){$_}}
-
-
     
-    #$now_date = (Get-date).Date
-    #$vacRecActual = $memb_new_SamAccountName_list1 | ?{((Get-Date($_.PregLeaveTo) -ErrorAction SilentlyContinue).Date) -ge $now_date}
-    #$body = "<br>" + $vacRecActual.Count + " : Count of actual vacation records"
-    #$vacRecActual | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+    $vacRecActual | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
+    Write-alError -EntryType Information -Message $body
+    $body += $vacRecDel.FullString -join '<br>'
+
     Send-alMessage -body $body
 
-    #$vacRecAdd.InputObject | Select -First 3
-    #$tmp2 += $vacRecold.InputObject
-    #$vacRecActual.Count
-
-    #$vacRecOld.InputObject | Select -First 9
+    #Success. No further trys needed
+    $k = $waitTimer
 
 } catch {
       Write-Host $Error[0].Exception.Message
-      $body =  "Error : " + $Error[0].Exception.Message
+      $body += "<br><br>Error : " + $Error[0].Exception.Message
       $body += "<br>" + ($Error[0].CategoryInfo -join '`r`n')
       $body += "<br>" + $Error[0].ScriptStackTrace
-      $body += "<br><br> Script execution fails. No changes were made."
-      #Write-alError -EntryType Error -Message $body
+      $body += "<br><br> Script execution fails. Try " + [string]([int]$k+1) + " of " + $waitTimer
+      Write-alError -EntryType Warning -Message $body
       Send-alMessage -body $body
+      #Failure. Let's try one more time
+      sleep 600
 } 
+    
+}
