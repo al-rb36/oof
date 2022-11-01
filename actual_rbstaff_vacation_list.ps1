@@ -135,7 +135,7 @@ try {
     
     $body = [string]$vacRecAdd.Count + " : Count of new vacation records to add<br>------<br>Added vacation records<br>------<br>"
     #$body += ($vacRecAdd |Out-String).Split('`r`n')  -join '<br>'
-    $body += $vacRecAdd.FullString  -join '<br>'
+    
     
     if ($vacRecAdd -ne $null) {$tmp2 += $vacRecAdd}
     
@@ -148,7 +148,8 @@ try {
     
     $vacRecActual | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
     Write-alError -EntryType Information -Message $body
-    $body += $vacRecDel.FullString -join '<br>'
+    $body += $vacRecAdd.FullString  -join '<br>' #New vacation records had been added
+    $body += $vacRecDel.FullString -join '<br>' #Old vacation records had been deleted
 
     Send-alMessage -body $body
 
