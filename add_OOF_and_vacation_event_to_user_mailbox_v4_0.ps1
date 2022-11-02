@@ -55,7 +55,7 @@ Function Write-alError {
     )
     #add the script path/file-name
     $Message = $PSCommandPath + " : PS-Script name" + "`r`n`r`n" + $Message
-    Write-EventLog -LogName "Application" -Source "PSScriptOOF" -EventID 1 -EntryType $EntryType -Message $Message -Category 1 -RawData 10,20
+    Write-EventLog -LogName "Application" -Source "PSScriptOOF" -EventID 2 -EntryType $EntryType -Message $Message -Category 1 -RawData 10,20
 }
 
 Function Format-alInfo {
@@ -189,7 +189,12 @@ try {
     $EWSTZ = @()
     $vacRecord = @()
     $recErrors = @()
-#$i = 20 4
+
+    #(0..($mailboxes.Count-1)) | where {$mailboxes[$_].SAMAccountNameAD -eq ''}
+
+
+    $mailBoxes.IndexOf('RB021822')
+#$i = 2307 20 4
     for ($i = 0; $i -lt $mailBoxes.Count; $i++) {
          #Write-alError -EntryType Information -Message ($mailBox)
         
@@ -237,7 +242,9 @@ try {
         $service.ImpersonatedUserId = New-Object Microsoft.Exchange.WebServices.Data.ImpersonatedUserId([Microsoft.Exchange.WebServices.Data.ConnectingIdType]::SmtpAddress, $EmailAddress)
         $CalendarFolder = [Microsoft.Exchange.WebServices.Data.CalendarFolder]::Bind($service, [Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Calendar)
 
-        $View = [Microsoft.Exchange.WebServices.Data.CalendarView]::new($d_start.AddSeconds(1),$d_end.AddDays(1))
+        #Exception calling "FindAppointments" with "1" argument(s): "You have exceeded the maximum number of objects that can be returned for the find operation. Use paging to reduce the result size and try your request again"
+        #use view upper limit 999
+        $View = [Microsoft.Exchange.WebServices.Data.CalendarView]::new($d_start.AddSeconds(1),$d_end.AddDays(1),999)
         $View.PropertySet = [Microsoft.Exchange.WebServices.Data.PropertySet]::new([Microsoft.Exchange.WebServices.Data.AppointmentSchema]::Subject,
                              [Microsoft.Exchange.WebServices.Data.AppointmentSchema]::Start,[Microsoft.Exchange.WebServices.Data.AppointmentSchema]::End,
                              [Microsoft.Exchange.WebServices.Data.AppointmentSchema]::DateTimeSent,
@@ -250,16 +257,16 @@ try {
         #$appointments = $CalendarFolder.FindAppointments($View) | ?{$_.Subject -like 'Отпуск*(автоматическое событие)'}# |  Select-Object start , End , Subject 
         #$appointments = $CalendarFolder.FindAppointments($View) | ?{($_.LegacyFreeBusyStatus -eq 'OOF') -and ($_.IsAllDayEvent -eq $true) }# |  Select-Object start , End , Subject 
         #Write-alError -EntryType Information -Message ("17")
-        $CalendarFolder.FindAppointments($View) | ?{if($_.LegacyFreeBusyStatus -eq 'OOF' -and ($_.IsAllDayEvent -eq $true -or ($_.end -  $_.start).TotalHours -gt 7)) {
-            try {        
-            $appointments = $_ ; $UserAppointments += $_; $EWSTZ += $EWSTimeZone; $vacRecord += $mailBoxes[$i]} 
-            catch {
+            try {  
+                $CalendarFolder.FindAppointments($View) | ?{if($_.LegacyFreeBusyStatus -eq 'OOF' -and ($_.IsAllDayEvent -eq $true -or ($_.end -  $_.start).TotalHours -gt 7)) {
+                  
+                $appointments = $_ ; $UserAppointments += $_; $EWSTZ += $EWSTimeZone; $vacRecord += $mailBoxes[$i]} 
+                } 
+            }catch {
                 #$mailBoxes[$i].mail
                 $recErrors += $mailBoxes[$i]
                 $logFile += ",FindAppointmentsError," + $Error[0]
-                }
-            } 
-        }
+            }
 
         $NewEventFlag = $true
         $foundEvents = @()
