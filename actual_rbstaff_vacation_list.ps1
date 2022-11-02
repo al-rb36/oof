@@ -133,7 +133,7 @@ try {
     $diff_email_list = $memb_new_SamAccountName_list1 | %{if(-not($tmp2.FullString -match $_.FullString)){$_}}
     $vacRecAdd = $diff_email_list
     
-    $body = [string]$vacRecAdd.Count + " : Count of new vacation records to add<br>------<br>Added vacation records<br>------<br>"
+    $body = [string]$vacRecAdd.Count + " : Count of new vacation records to add"
     #$body += ($vacRecAdd |Out-String).Split('`r`n')  -join '<br>'
     
     
@@ -143,12 +143,16 @@ try {
     $vacRecActual = $tmp2 | ?{((Get-Date($_.PregLeaveTo) -ErrorAction SilentlyContinue).Date) -ge $now_date}
     $body += "<br>" + $vacRecActual.Count + " : Count of actual vacation records"
     $vacRecDel = $tmp2 | ?{((Get-Date($_.PregLeaveTo) -ErrorAction SilentlyContinue).Date) -lt $now_date.AddDays(0)}
-    $body += "<br>" + $vacRecDel.Count + " : Count of vacation records to delete<br>------<br>Deleted vacation records<br>------<br>"
+    $body += "<br>" + $vacRecDel.Count + " : Count of vacation records to delete"
     #$body += ($vacRecDel |Out-String).Split('`r`n') -join '<br>'
     
     $vacRecActual | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
-    Write-alError -EntryType Information -Message $body
+    #Write-alError -EntryType Information -Message $body
+    Write-alError -EntryType Information -Message ($body.Replace('<br>', "`r`n"))
+    
+    $body += "<br>------<br>Added vacation records<br>------<br>"
     $body += $vacRecAdd.FullString  -join '<br>' #New vacation records had been added
+    $body += "<br>------<br>Deleted vacation records<br>------<br>"
     $body += $vacRecDel.FullString -join '<br>' #Old vacation records had been deleted
 
     Send-alMessage -body $body
