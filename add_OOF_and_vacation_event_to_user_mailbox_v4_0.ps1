@@ -128,6 +128,7 @@ try {
   
     $now_date = (Get-date).Date
     $body1 = ""
+    $bodyTmp = ""
     $file = $env:USERPROFILE +"\Documents\add_OOF_psscript\vacation_list.csv"
     $file_log = $logPath + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt"
     #Write-alError -EntryType Information -Message ($file)
@@ -193,7 +194,6 @@ try {
     #(0..($mailboxes.Count-1)) | where {$mailboxes[$_].SAMAccountNameAD -eq ''}
 
 
-    $mailBoxes.IndexOf('RB021822')
 #$i = 2307 20 4
     for ($i = 0; $i -lt $mailBoxes.Count; $i++) {
          #Write-alError -EntryType Information -Message ($mailBox)
@@ -266,6 +266,7 @@ try {
                 #$mailBoxes[$i].mail
                 $recErrors += $mailBoxes[$i]
                 $logFile += ",FindAppointmentsError," + $Error[0]
+                $logFileErrors = $true
             }
 
         $NewEventFlag = $true
@@ -279,9 +280,9 @@ try {
             
            #Appropriate user vacation events exist
                 if(($firstEventStartDelta -ge -48 -and $lastEventEndDelta -lt 48)) {$NewEventFlag = $false; $NoNeedEventCount += 1; $logFile += ",UserEventExists"
-                    $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].FullString
-                    $body1 += '<br>&emsp;&ensp;' + 'UserEventCount: ' + $appointments.count + '<br>&emsp;&ensp; FirstEvent: ' + ($firstEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent)
-                    $body1 += '<br>&emsp;&ensp;' + 'LastEvent: ' + ($lastEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent) 
+                    $bodyTmp += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].FullString
+                    $bodyTmp += '<br>&emsp;&ensp;' + 'UserEventCount: ' + $appointments.count + '<br>&emsp;&ensp; FirstEvent: ' + ($firstEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent)
+                    $bodyTmp += '<br>&emsp;&ensp;' + 'LastEvent: ' + ($lastEvent | select start, end,*zone, subj*, Leg*,IsAllDayEvent) 
                 }
             } catch {
                 $logFile += ",UserEventError," + $Error[0]
@@ -340,7 +341,7 @@ try {
             $body += '<br><br> Для информации. Текущий текст внутреннего автоответа:<br>======<br>' + $curr_ar_status.InternalMessage + '<br>======'
             #$myTo = $EmailAddress
       #      Send-alMessage -body $body -to $EmailAddress -Subj $mySubject
-            $body1 += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $Subject
+            $bodyTmp += '<br>' + $mailBoxes[$i].SAMAccountNameAD + "; " + $Subject
 
         } catch {
             $logFile += ",EventCreationMessageSendingError," + $Error[0]
@@ -366,8 +367,8 @@ try {
              -or $curr_ar_status.AutoReplyState -eq "Enabled")) {
                 #Write-alError -EntryType Information -Message ("2nd if")
                 try {
-                $body1 += "<br>" + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].mail + "; " + $mailBoxes[$i].PregLeaveFrom  + "; " + $mailBoxes[$i].PregLeaveTo + "; " + $mailBoxes[$i].PregLeaveName
-                $body1 += "<br>&emsp;&ensp;" + $curr_ar_status.AutoReplyState + "; " + $curr_ar_status.StartTime + "; " + $curr_ar_status.EndTime 
+                $bodyTmp += "<br>" + $mailBoxes[$i].SAMAccountNameAD + "; " + $mailBoxes[$i].mail + "; " + $mailBoxes[$i].PregLeaveFrom  + "; " + $mailBoxes[$i].PregLeaveTo + "; " + $mailBoxes[$i].PregLeaveName
+                $bodyTmp += "<br>&emsp;&ensp;" + $curr_ar_status.AutoReplyState + "; " + $curr_ar_status.StartTime + "; " + $curr_ar_status.EndTime 
                 #Write-alError -EntryType Information -Message ("Set")
       #          Set-MailboxAutoReplyConfiguration $mailboxes[$i].mail –InternalMessage $oof_def_text -AutoReplyState Scheduled –StartTime $d_start -EndTime $d_end.AddDays(1) -ExternalAudience None
                 $mailBoxes[$i].IsOOFOn = $true
@@ -422,12 +423,17 @@ try {
         $body1 += '<br><br> There were some errors. Addition info logfile ' + $file_log
     } 
 
-
-    Send-alMessage -body $body1 -to $myTo -Subj $mySubj
+    
     #Write-alError -EntryType Information -Message ("Stop")
 
     $mailBoxes + $mailBoxes_not | select $param | Export-Csv -Path $file -Delimiter ";" -Encoding UTF8
 
+    Write-alError -EntryType Information -Message ($body1.Replace('<br>', "`r`n"))
+
+    $body1 += '<br>------<br>' + $bodyTmp
+
+    Send-alMessage -body $body1 -to $myTo -Subj $mySubj
+    
     Remove-alLogFiles -log_Path $logPath -logDepth 9 #remove log files older then 9 days
 
 } catch {
